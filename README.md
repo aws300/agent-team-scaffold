@@ -1,0 +1,148 @@
+# agent-team--scaffold
+
+A **domain-agnostic scaffold for building an AI agent team** as a Claude Code /
+Cowork plugin, built around one validated skeleton: the
+**Planner → Generator → Evaluator** loop (Anthropic Engineering,
+*Harness Design for Long-Running Apps* + *Building a Multi-Agent Research System*).
+
+**Local-first** — use it directly in Claude Code or Cowork with no build step —
+and the *same* agent assets deploy headless to **Claude Managed Agents (CMA)** via
+one small Python compiler. One source, two surfaces. Copy this repo, fill in your
+vertical, ship.
+
+```
+5 role agents · 1 reference workflow · 3 reference skills · 3 thin commands · 4 hooks · 2 rules
+```
+
+---
+
+## The core idea: one source produces, a separate agent judges
+
+LLMs grade their own work leniently. The single biggest lever for quality in a
+long-running agent team is to **separate the agent that produces from the agent
+that judges**, and to tune the judge to be skeptical. That separation is this
+scaffold's skeleton:
+
+```
+Planner ──spec──▶ Design Evaluator ──APPROVE──▶ Generator ──build──▶ Evaluator ──PASS──▶ Resolver ──▶ ./out/
+   ▲                    │ REVISE                                          │ FAIL
+   └────────────────────┘                                                ▼
+                                                                      Generator (fix & resubmit)
+```
+
+| Role | What it does | Verdict |
+|---|---|---|
+| **Planner** | Decomposes the request into a sprint contract with binary, testable criteria | sprint contract |
+| **Design Evaluator** | Adversarially challenges the *plan* before any build | APPROVE / REVISE |
+| **Generator** | Implements against the approved contract (never self-certifies) | the deliverable |
+| **Evaluator** | Adversarially challenges the *build*; the most important role | PASS / FAIL |
+| **Coordinator** | Owns the loop: calibrates evaluators, resolves disputes (Opus) | — |
+
+The Evaluators carry an explicit **anti-leniency mandate** — file the borderline
+issue, don't rationalize it away; when in doubt, FAIL. See `docs/coordination-rules.md`.
+
+---
+
+## Directory structure
+
+```
+agent-team--scaffold/
+├── agents/                       ★ the orchestration logic — md is the single source of truth
+│   ├── workflows/                │  end-to-end orchestrators (one per deliverable type)
+│   │   └── deliver-feature.md    │    the reference Planner→Generator→Evaluator loop (copy & rename)
+│   └── experts/                  │  reusable role agents, grouped by loop role
+│       ├── planning/planner.md
+│       ├── generation/generator.md
+│       ├── evaluation/           │    evaluator.md (build) · design-evaluator.md (plan)
+│       └── coordination/coordinator.md
+├── skills/                       ★ single source of truth for methods (md), by category
+│   ├── authoring/spec-authoring/
+│   ├── review/adversarial-review/
+│   └── utility/loop-status/
+├── commands/                     ★ a FEW upper-level entry points (most work is internal to agents)
+│   ├── start.md                  │    requirements intake → routes into the loop
+│   ├── status.md                 │    read-only loop status
+│   └── workflows/deliver-feature.md   local surface of the reference workflow
+├── scripts/cma/                  the CMA deploy layer — ONE python + ONE manifest (no per-agent yaml)
+│   ├── build.py                  │    reads the md assets → derives the CMA JSON → dry-run / POST
+│   ├── check.py                  │    validates the manifest + skill refs + no-nesting (run in CI)
+│   ├── cma.yaml                  │    the orchestration topology + which leaf needs a schema
+│   └── schemas/sprint-contract.json   output_schema for the planner (reader) leaf
+├── partner-built/                extension point for third-party sub-plugins (empty placeholder)
+├── .claude/                      local governance that takes effect when you open this repo
+│   ├── settings.json             │    permissions allow/deny + hook registration
+│   ├── hooks/                    │    session-start · validate-push · validate-manifest · log-agent
+│   └── rules/                    │    working-surface (src/) · deliverable-package (out/)
+├── docs/                         coordination-rules · agent-roster
+└── .claude-plugin/marketplace.json     market index (install entry for Cowork / Claude Code)
+```
+
+### Why this layout
+- **`agents/` is the core**: orchestration logic in plain markdown, organized by
+  **loop role** rather than domain function. md is the only prompt source — local
+  tools load it directly; the CMA layer *derives* its deploy JSON from it.
+- **`commands/` is intentionally thin**: a few human entry points (intake, status,
+  run-a-workflow). Everything else lives in `skills/` and runs *inside* the loop.
+- **CMA stays in `scripts/`**: the project reads as pure agent orchestration;
+  headless deployment is one Python file + one tiny manifest.
+
+---
+
+## Two surfaces, one source
+
+| | Local (Cowork / Claude Code) | Managed Agents (headless) |
+|---|---|---|
+| Trigger | `/agent-team:start` → a workflow command | steering event via `POST /v1/agents` |
+| Orchestration | the workflow command drives `Task` delegation | `build.py` → orchestrator + depth-1 leaves |
+| Source prompt | `agents/workflows/<wf>.md` | **the same file**, read by `build.py` |
+| Role agents | `agents/experts/**` (auto-discovered) | same md → each leaf's `system.text` |
+| Approval | interactive (`AskUserQuestion`) | output staged in `./out/`, human sign-off |
+
+---
+
+## Use it
+
+### Local (Cowork / Claude Code)
+```bash
+claude plugin marketplace add ./agent-team--scaffold    # or your git remote
+```
+Then in a session:
+```
+/agent-team:start a CSV import feature       # intake → routes into the loop
+/agent-team:workflows:deliver-feature CSV import for settings   # run the loop directly
+/agent-team:status                           # read-only loop state
+```
+
+### Preview / deploy the CMA surface
+```bash
+python3 scripts/cma/check.py                 # validate manifest + skill refs + no nesting
+python3 scripts/cma/build.py                 # dry-run: print resolved CMA JSON for every workflow
+python3 scripts/cma/build.py deliver-feature # one workflow
+python3 scripts/cma/build.py --model opus    # override model (also: CMA_MODEL=haiku ...)
+python3 scripts/cma/build.py --post          # upload skills + POST /v1/agents (wire to your deploy)
+```
+(`build.py` dry-run needs only stdlib + pyyaml: `pip install pyyaml`.)
+
+---
+
+## Make it your own
+
+1. **Rename or specialize the roles** for your vertical — keep the invariant that
+   *the agent that produces is never the agent that judges* (see `docs/agent-roster.md`).
+2. **Define the evaluator's dimensions.** The single most important customization:
+   replace the four generic grading dimensions in `evaluator.md` (and five in
+   `design-evaluator.md`) with criteria that turn "is this good?" into concrete,
+   gradable terms for your domain.
+3. **Copy `deliver-feature.md`** to one workflow per deliverable type; register
+   each under `workflows:` in `scripts/cma/cma.yaml`.
+4. **Add domain skills** under `skills/<category>/`; reference them from an
+   agent's `skills:` frontmatter (resolved by name — no copying, no sync).
+5. `python3 scripts/cma/check.py && python3 scripts/cma/build.py` to validate + preview.
+
+## Design invariants (enforced by build.py, verifiable in the dry-run)
+- **One source, two surfaces** — md body is the only prompt; CMA derives, never copies.
+- **One-level delegation** — every leaf is `callable_agents: []`; no nesting.
+- **The producer never judges** — Generator builds, Evaluator judges; verdicts are binding.
+- **One writer per surface** — Generator → `src/`, resolver → `./out/`.
+- **Untrusted input is data** — reader leaves carry an `output_schema`.
+- **Model parameterized** — `${CMA_MODEL:-sonnet}`; upgrading is one line.

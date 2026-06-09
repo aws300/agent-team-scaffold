@@ -1,4 +1,4 @@
-# agent-team--scaffold
+# agent-team-scaffold
 
 A **domain-agnostic scaffold for building an AI agent team** as a Claude Code /
 Cowork plugin, built around one validated skeleton: the
@@ -46,7 +46,7 @@ issue, don't rationalize it away; when in doubt, FAIL. See `docs/coordination-ru
 ## Directory structure
 
 ```
-agent-team--scaffold/
+agent-team-scaffold/
 ├── agents/                       ★ the orchestration logic — md is the single source of truth
 │   ├── workflows/                │  end-to-end orchestrators (one per deliverable type)
 │   │   └── deliver-feature.md    │    the reference Planner→Generator→Evaluator loop (copy & rename)
@@ -104,7 +104,7 @@ agent-team--scaffold/
 
 ### Local (Cowork / Claude Code)
 ```bash
-claude plugin marketplace add ./agent-team--scaffold    # or your git remote
+claude plugin marketplace add ./agent-team-scaffold    # or your git remote
 ```
 Then in a session:
 ```

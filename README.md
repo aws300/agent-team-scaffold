@@ -50,7 +50,7 @@ agent-team-scaffold/
 ├── agents/                       ★ the orchestration logic — md is the single source of truth
 │   ├── workflows/                │  end-to-end orchestrators (one per deliverable type)
 │   │   └── deliver-feature.md    │    the reference Planner→Generator→Evaluator loop (copy & rename)
-│   └── experts/                  │  reusable role agents, grouped by loop role
+│   └── specialists/              │  reusable role agents, grouped by loop role
 │       ├── planning/planner.md
 │       ├── generation/generator.md
 │       ├── evaluation/           │    evaluator.md (build) · design-evaluator.md (plan)
@@ -95,7 +95,7 @@ agent-team-scaffold/
 | Trigger | `/agent-team:start` → a workflow command | steering event via `POST /v1/agents` |
 | Orchestration | the workflow command drives `Task` delegation | `build.py` → orchestrator + depth-1 leaves |
 | Source prompt | `agents/workflows/<wf>.md` | **the same file**, read by `build.py` |
-| Role agents | `agents/experts/**` (auto-discovered) | same md → each leaf's `system.text` |
+| Role agents | `agents/specialists/**` (auto-discovered) | same md → each leaf's `system.text` |
 | Approval | interactive (`AskUserQuestion`) | output staged in `./out/`, human sign-off |
 
 ---

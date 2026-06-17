@@ -1,6 +1,6 @@
 # Agent Roster
 
-Each agent has a definition file under `agents/experts/`. The roster is organized
+Each agent has a definition file under `agents/specialists/`. The roster is organized
 by **loop role**, not by domain function — this is a domain-agnostic scaffold.
 To build your vertical, keep the five roles and either rename them or add
 domain specialists that play each role.
@@ -9,11 +9,11 @@ domain specialists that play each role.
 
 | Loop role | Agent | Dir | Model | Verdict it produces |
 |---|---|---|---|---|
-| Planner | `planner` | `experts/planning/` | sonnet | sprint contract |
-| Design Evaluator | `design-evaluator` | `experts/evaluation/` | sonnet | **APPROVE / REVISE** (on the plan) |
-| Generator | `generator` | `experts/generation/` | sonnet | the deliverable under `src/` |
-| Evaluator | `evaluator` | `experts/evaluation/` | sonnet | **PASS / FAIL** (on the build) |
-| Coordinator | `coordinator` | `experts/coordination/` | opus | loop ownership + calibration |
+| Planner | `planner` | `specialists/planning/` | sonnet | sprint contract |
+| Design Evaluator | `design-evaluator` | `specialists/evaluation/` | sonnet | **APPROVE / REVISE** (on the plan) |
+| Generator | `generator` | `specialists/generation/` | sonnet | the deliverable under `src/` |
+| Evaluator | `evaluator` | `specialists/evaluation/` | sonnet | **PASS / FAIL** (on the build) |
+| Coordinator | `coordinator` | `specialists/coordination/` | opus | loop ownership + calibration |
 
 ### Role assignment per workflow
 

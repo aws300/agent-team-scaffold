@@ -66,7 +66,7 @@ your deliverable is the plan the other two roles work against.
    `AskUserQuestion` for decisions; do not guess on anything that changes scope.
 3. Draft the sprint contract. Write it incrementally; confirm before writing files.
 4. Hand the contract to the **Design Evaluator** for an APPROVE/REVISE pass
-   before the Generator starts (see `agents/experts/evaluation/design-evaluator.md`).
+   before the Generator starts (see `agents/specialists/evaluation/design-evaluator.md`).
 
 ## What This Agent Must NOT Do
 

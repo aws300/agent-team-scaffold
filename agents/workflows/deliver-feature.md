@@ -12,7 +12,7 @@ delegated worker.
 
 > **Scaffold note:** This is the template orchestrator. Copy it to
 > `agents/workflows/<your-deliverable>.md`, rename the roles to your vertical's
-> experts, and register it in `scripts/cma/cma.yaml`.
+> specialists, and register it in `scripts/cma/cma.yaml`.
 
 ## The loop
 

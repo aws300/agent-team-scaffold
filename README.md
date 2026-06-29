@@ -88,7 +88,7 @@ agent-team-scaffold/
 │   ├── settings.json             │    permissions allow/deny + hook registration
 │   ├── hooks/                    │    same scripts as hooks/ above (kept in sync)
 │   └── rules/                    │    working-surface (src/) · deliverable-package (out/)
-└── docs/                         coordination-rules · agent-roster
+└── docs/                         coordination-rules · agent-roster · memory-and-dreams
 ```
 
 > **Two governance layers, on purpose.** The plugin-root files (`plugin.json`,
@@ -142,6 +142,35 @@ Installed as a Claude Code plugin, the scaffold wires the full plugin feature se
 > **What stays per-agent (no global override exists):** `model`, `tools`, and `mcpServers` are
 > declared in each agent's own frontmatter. The one exception is `settings.json`'s `agent` key,
 > which promotes a single agent to the main thread. (See the research notes in `docs/`.)
+
+---
+
+## Memory, isolated context & dreams (Managed Agents)
+
+The headless surface adds three Managed-Agents capabilities — see
+[`docs/memory-and-dreams.md`](docs/memory-and-dreams.md) for the full, citation-backed guide.
+
+- **Memory stores** are markdown collections attached **at session creation**
+  (`resources[]`, mounted under `/mnt/memory/`), not fields on the agent. Scopes are a
+  *pattern* of which store you attach with what `access`:
+  - **Global** — `team-standards`, `read_only`, attached to every session (house standards).
+  - **Project** — `project-context`, `read_write`, per project, outlives any session.
+  - **Per-agent** — `evaluator-calibration`, attached only to the evaluator's session (its private memory).
+  `cma.yaml` declares a `memory_stores:` catalog; workflows set `session_memory:` (global+project)
+  and leaves set `memory:` (per-agent). `build.py` emits the session `resources[]` stanza —
+  run `python3 scripts/cma/build.py deliver-feature` to see all three resolve.
+- **Isolated context** — a `multiagent` coordinator runs each sub-agent in its **own
+  context-isolated thread** with its own model/tools/MCP. For a truly private-memory agent,
+  give it its own agent definition *and* its own session with only its store attached.
+- **Dreams** — an async job that reads one store + past sessions and produces a **new,
+  reorganized** store (input untouched). The coordinator schedules a dream over the
+  calibration/project memory, human-reviewed before adoption.
+
+```
+global   →  team-standards        (read_only,  every session)
+project  →  project-context       (read_write, this project)
+per-agent → evaluator-calibration (read_write, evaluator's session only)
+```
 
 ---
 

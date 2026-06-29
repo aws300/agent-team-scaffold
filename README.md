@@ -69,13 +69,35 @@ agent-team-scaffold/
 │   ├── cma.yaml                  │    the orchestration topology + which leaf needs a schema
 │   └── schemas/sprint-contract.json   output_schema for the planner (reader) leaf
 ├── partner-built/                extension point for third-party sub-plugins (empty placeholder)
-├── .claude/                      local governance that takes effect when you open this repo
+│
+│   ── installable-plugin surface (auto-discovered at plugin root) ──
+├── .claude-plugin/
+│   ├── plugin.json               ★ the plugin manifest — identity + explicit agent list + userConfig
+│   └── marketplace.json          │    market index (install entry for Cowork / Claude Code)
+├── hooks/hooks.json              event-level hooks (SessionStart · SubagentStart/Stop · Pre/PostToolUse)
+│   └── *.sh                      │    session-start · log-agent · validate-manifest · validate-push
+├── .mcp.json                     global MCP registration (a filesystem server; per-agent authorized)
+├── .lsp.json                     LSP server registration (pyright example)
+├── monitors/monitors.json        background monitor — watch-out.sh announces ./out/ sign-off packages
+├── output-styles/loop-verdict.md verdict-first, evidence-cited communication style
+├── bin/cma-check                 executable added to PATH on enable (validates the CMA manifest)
+├── settings.json                 plugin-root settings: agent=coordinator + subagentStatusLine
+│
+│   ── local-development mirror ──
+├── .claude/                      local governance when you open this repo directly
 │   ├── settings.json             │    permissions allow/deny + hook registration
-│   ├── hooks/                    │    session-start · validate-push · validate-manifest · log-agent
+│   ├── hooks/                    │    same scripts as hooks/ above (kept in sync)
 │   └── rules/                    │    working-surface (src/) · deliverable-package (out/)
-├── docs/                         coordination-rules · agent-roster
-└── .claude-plugin/marketplace.json     market index (install entry for Cowork / Claude Code)
+└── docs/                         coordination-rules · agent-roster
 ```
+
+> **Two governance layers, on purpose.** The plugin-root files (`plugin.json`,
+> `hooks/hooks.json`, `.mcp.json`, `.lsp.json`, `monitors/`, `bin/`, root
+> `settings.json`, `output-styles/`) take effect when this is **installed as a
+> Claude Code plugin** — they use `${CLAUDE_PLUGIN_ROOT}` paths and are
+> auto-discovered. The `.claude/` directory is the **local-development mirror**
+> that takes effect when you just open the repo. The hook scripts are identical
+> in both; edit `hooks/` and copy to `.claude/hooks/`.
 
 ### Why this layout
 - **`agents/` is the core**: orchestration logic in plain markdown, organized by
@@ -97,6 +119,29 @@ agent-team-scaffold/
 | Source prompt | `agents/workflows/<wf>.md` | **the same file**, read by `build.py` |
 | Role agents | `agents/specialists/**` (auto-discovered) | same md → each leaf's `system.text` |
 | Approval | interactive (`AskUserQuestion`) | output staged in `./out/`, human sign-off |
+
+---
+
+## Plugin surface (team-level capabilities)
+
+Installed as a Claude Code plugin, the scaffold wires the full plugin feature set. Everything is a
+**runnable minimal example** — copy and adapt for your vertical.
+
+| Capability | File | What it does |
+|---|---|---|
+| **Manifest** | `.claude-plugin/plugin.json` | Identity, keywords, the **explicit agent list** (the nested `specialists/`+`workflows/` layout is preserved by listing each `.md` — `agents/` is a replace-default field), and the component references below. |
+| **Hooks** (event-level, whole session) | `hooks/hooks.json` | `SessionStart` loads loop context; `SubagentStart`/`SubagentStop` append an audit trail; `PreToolUse(Bash)` guards risky pushes; `PostToolUse(Write\|Edit)` re-checks the CMA manifest. All via `${CLAUDE_PLUGIN_ROOT}`. |
+| **MCP** (global register, per-agent authorize) | `.mcp.json` | A filesystem MCP server over `${CLAUDE_PROJECT_DIR}`. Registered globally; each subagent opts in via its frontmatter `tools:`/`mcpServers:`. |
+| **LSP** | `.lsp.json` | A pyright language server (diagnostics fed back after edits). |
+| **Monitor** (background) | `monitors/monitors.json` | `watch-out.sh` polls `./out/` and notifies when a deliverable is staged for sign-off. *(experimental)* |
+| **Output style** | `output-styles/loop-verdict.md` | Verdict-first, evidence-cited communication that matches the loop's discipline. |
+| **PATH binary** | `bin/cma-check` | `cma-check` on the Bash PATH while enabled — validates the CMA manifest from anywhere. |
+| **Root settings** | `settings.json` | The only two supported keys: `agent: coordinator` (the loop owner is the main-thread default) and a `subagentStatusLine`. |
+| **User config** | `plugin.json → userConfig` | Asked at enable time: **`default_model`** (the Sonnet-tier roles' model; export as `CMA_MODEL` for headless builds — coordinator stays opus) and **`evaluator_strictness`** (`standard` / `strict` / `panel`, read by the evaluators via `${user_config.evaluator_strictness}`). |
+
+> **What stays per-agent (no global override exists):** `model`, `tools`, and `mcpServers` are
+> declared in each agent's own frontmatter. The one exception is `settings.json`'s `agent` key,
+> which promotes a single agent to the main thread. (See the research notes in `docs/`.)
 
 ---
 

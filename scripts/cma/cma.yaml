@@ -13,6 +13,9 @@
 #   resolver = read/write/edit  (the ONLY worker that writes the ./out/ package)
 
 # Model is parameterized — upgrading the model = change this one line (or pass --model / set CMA_MODEL).
+# As an installed plugin, the `default_model` userConfig value is the same knob: export it as
+# CMA_MODEL before a headless build, e.g.  CMA_MODEL="$default_model" python3 scripts/cma/build.py
+# (the coordinator stays opus regardless — that is set in its own agent frontmatter).
 model: ${CMA_MODEL:-sonnet}
 
 headless_append: >

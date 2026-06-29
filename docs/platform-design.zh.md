@@ -1,10 +1,34 @@
 # Agent 低代码托管平台 — 设计文档
 
-> 目标：基于 **Claude Managed Agents**，让用户通过 **fork `agent-team-scaffold` 模板、
-> 只改 markdown / json / yaml** 就能自定义 **Memory、Dreams、Per-Agent Context、Knowledge**，
-> 完全不接触任何底层 API。
+> 目标：让用户通过 **fork `agent-team-scaffold` 模板、只改 markdown / json / yaml** 就能自定义
+> **Memory、Dreams、Per-Agent Context、Knowledge**，完全不接触任何底层 API。
 
 本文是平台的**架构与概念设计**；面向使用者的操作步骤见 [`platform-guide.zh.md`](platform-guide.zh.md)。
+
+---
+
+## 0. 这个仓库在你的平台里的位置（先读这一节）
+
+**一个 GitHub 仓库 = 一个 Claude Plugin = 一个 Agent Team。** 本脚手架就是这样一个「Agent Team
+仓库」。它有**两个部署目标**，同一份源码（`agents/` + `skills/` + `commands/` + `scripts/cma/`
++ `cma.yaml`）两处兑现：
+
+| 部署目标 | 兑现方式 | 记忆 | 知识 / RAG | 适用 |
+|---|---|---|---|---|
+| **CMA**（Claude Managed Agents，Anthropic 托管） | `scripts/cma/deploy.py`（本仓库内置） | memory store（`/mnt/memory/`） | **文件系统检索**（grep/read）；向量检索靠 MCP | 快速起步、无自有平台时 |
+| **AgentX**（你的自托管平台，`agentx.nx.run`） | **git-sync 服务**把本仓库同步进平台 | **AgentCore Memory**（Semantic/UserPreference/Summary，每 Specialist 独立） | **Bedrock Knowledge Base + Neptune GraphRAG**（真·向量+图检索） | 生产、多租户、已有文档/知识库/技能管理 |
+
+**关键:本脚手架不重新发明你 AgentX 平台已有的管理能力**，而是作为它的**输入物（Agent Team
+仓库）**对接。AgentX 侧已具备的多维管理(见 §2.5)直接复用:
+
+- **Library**(`/library/documents|knowledge|skills`)—— 文档管理、知识库管理、Skills 管理
+- **Connectors**(`/settings/connectors`)—— MCP / APP 连接器与 GitHub 凭证管理
+- **My Team / Specialists** —— 角色(人格层)管理 + 挂载 skill/memory
+- **git-sync** —— 按 org 约定仓库(`{org}/documents|knowledge|skills|agents`)自动同步与写回
+
+因此本脚手架的 `cma.yaml` 主要服务 **CMA 目标**；当部署到 **AgentX** 时,`memory_stores:` /
+`knowledge:` 目录是**对接 AgentX 既有 Library/Knowledge/Memory 的声明清单**(见 §2.5 的映射),
+而非平台要新建的子系统。
 
 ---
 
@@ -67,6 +91,52 @@ Agent（智能体）────────────────────
 3. 子 agent 的「独立上下文」来自 multiagent：「每个 agent 在自己的线程里运行……工具、MCP、
    上下文都不共享」。
 
+> **AgentX 目标的等价物**：上表是 CMA 的原语；部署到 AgentX 时分别对应 AgentCore Harness/Session、
+> AgentCore Memory、Bedrock Knowledge Base、@specialist 子 Agent（见 §2.5）。脚手架的概念一套，
+> 两个运行时各自兑现。
+
+---
+
+## 2.5 映射到 AgentX 既有管理平台（文档 / 知识库 / Skills / 连接器 / 角色 / 记忆）
+
+你的 AgentX 平台已经提供了多维管理面板。本脚手架仓库**作为输入物**对接它们，不重复造轮子。
+对应关系如下（左：脚手架里的声明；右：AgentX 既有的管理面板与服务）：
+
+| 脚手架里的概念 | AgentX 管理面板 / 服务 | 运行时载体 | 说明 |
+|---|---|---|---|
+| `skills/**/SKILL.md` | **Library → Skills**（`/library/skills`，SkillService） | 写入 `/workspace/.opencode/skills/` 或注入 system prompt | Skills 是平台一等公民；git-sync 把本仓库 `skills/` 同步进 Library |
+| `knowledge:`（`type: file`） | **Library → Documents**（`/library/documents`） | S3 + DB 索引 | 单文档；放进约定仓库 `{org}/documents/<name>/` |
+| `knowledge:`（语料/向量检索） | **Library → Knowledge**（`/library/knowledge`，KnowledgeService） | **Bedrock Knowledge Base + Neptune GraphRAG** | **真·向量+图检索**（不是 CMA 的 grep）；`knowledge/v1beta` |
+| `.mcp.json` / MCP server | **Connectors**（`/settings/connectors`，ConnectorService：`mcp_remote`/`mcp_local`/`app`） | 写入 OpenCode config `mcpServers`，或 connector-as-MCP-bridge | 凭证 AES-256-GCM 存 MongoDB，按调用注入 |
+| `agents/specialists/**`（人格层） | **My Team → Specialists**（SpecialistService） | claude-agent-sdk `AgentDefinition` / @specialist 子 Agent | 每个 Specialist 独立 system prompt + skills + memory |
+| `agents/workflows/**`（编排） | **Workflow Map**（聊天右侧编排可视化，WorkflowService） | orchestrator agent 串联 leaves | 一级委派的可视化 |
+| `commands/**` | 输入框 `/` **Actions** 菜单 | SDK slash command | — |
+| 整个仓库 | **`/agents` 市场 + git-sync** | 一个 git 仓库 → 一个 PVC 目录 | 一仓库 = 一 Plugin = 一 Team |
+| `memory_stores:`（各 scope） | **AgentCore Memory**（Semantic / UserPreference / Summary） | 按命名空间隔离，每 Specialist 独立 | 见下方「记忆映射」 |
+
+### 记忆映射：scope ↔ AgentCore Memory 命名空间
+
+CMA 用 memory store，AgentX 用 **AgentCore Memory**（托管，跨会话）。脚手架的 `scope` 直接翻译为
+AgentCore Memory 的**命名空间隔离维度**：
+
+| 脚手架 scope | CMA 兑现 | AgentX 兑现（AgentCore Memory 命名空间） |
+|---|---|---|
+| `agent` | 一个共享 memory store | 按 **agent/team** 命名空间——所有 project 共享 |
+| `project` | 每 project 一个 store | 按 **project（租户）** 命名空间——项目间隔离 |
+| `session` | 每 session 新建 store | 会话短期状态（microVM 内，结束即弃） |
+| 角色私有（leaf `memory:`） | 该角色挂自己的 store | **每个 Specialist 独立记忆**（「This specialist builds knowledge as it works」） |
+
+> 因此用户在 `cma.yaml` 里写的 `scope`，在 AgentX 侧由 git-sync / 运行时翻译为对应的 AgentCore
+> Memory 命名空间与 Specialist 记忆挂载——**用户依旧只改 yaml**。
+
+### git-sync 同步约定（AgentX 侧，已设计）
+
+git-sync 以 **org 约定仓库**（`{org}/documents|knowledge|skills|agents`，main 第一层子目录 = 一个
+条目）+ **topic 独立仓库**（整仓库 = 一个条目）同步内容；区分 **official org**（服务配置、只读
+skills+agents）与 **custom org**（`/settings/connectors` 配置、读写全部四类，可写回）。本脚手架
+作为一个 `agents` 类的 **topic 独立仓库**或约定仓库子目录被同步进 `/agents` 市场。
+（详见 AgentX 的 `docs/agent-teams-design.md` 第 4 节。）
+
 ---
 
 ## 3. 记忆作用域（scope）的精确语义
@@ -103,6 +173,19 @@ Managed Agents **没有原生向量库 / 嵌入索引 / `rag_search` 工具**。
 
 平台在 `knowledge:` 目录里声明知识来源与 scope，`build.py` 把它们和记忆一起注入会话
 `resources[]`。这样「项目级知识」就和「项目级记忆」一样，每个 project 各挂各的。
+
+### 两个目标的 RAG 能力差异（重要）
+
+| | **CMA 目标** | **AgentX 目标** |
+|---|---|---|
+| 知识载体 | 挂进沙箱的文件 / 仓库 | **Bedrock Knowledge Base**（S3 向量化）+ **Neptune GraphRAG** |
+| 检索方式 | `grep` / `glob` / `read`（文件系统） | **向量相似度 + 图游走 + 融合重排序**（真·语义检索） |
+| 语义检索 | 需自带向量库做成 MCP | **平台原生**（KnowledgeService，`knowledge/v1beta`） |
+| 管理面板 | 无（声明在 yaml） | **Library → Knowledge / Documents** |
+
+也就是说：**部署到 AgentX 时你自动获得真正的向量 RAG**，无需 MCP 变通——`knowledge:` 里 scope=
+`project` 的语料会落进该项目（租户）的 Bedrock Knowledge Base，检索结果注入 system prompt。CMA
+目标则退化为文件系统检索（脚手架默认形态，零依赖可跑）。这是「一份声明、两处兑现，能力按目标增强」。
 
 ---
 
@@ -255,6 +338,35 @@ python3 scripts/cma/deploy.py session acme deliver-feature "..." --apply
 设计原则：**②与③分离**。编译层永远无副作用（纯函数，CI 里随便跑）；只有 deploy.py 触网，且默认
 干跑。声明侧与兑现侧共用 build.py 的派生逻辑与 `_slug` 规则，保证两者永不漂移。
 
+### 9.1b 双部署目标（同一仓库，两处兑现）
+
+①声明层与②编译层对**两个目标共用**；只有③兑现层分叉：
+
+```
+                        本 Agent Team 仓库（① 声明 + ② 编译）
+                          cma.yaml · agents/ · skills/ · commands/
+                                   │
+                ┌──────────────────┴───────────────────┐
+                ▼                                       ▼
+   ③a CMA 目标（脚手架内置）                 ③b AgentX 目标（你的自托管平台）
+   scripts/cma/deploy.py                     git-sync 服务（gh/git CLI 同步本仓库）
+        │ HTTPS                                    │
+        ▼                                          ▼
+   Claude Managed Agents                     AgentX（agentx.nx.run, EKS + Bedrock AgentCore）
+     /v1/agents · memory_stores               · Library: Documents/Knowledge/Skills
+     · files · sessions · dreams              · Connectors（MCP/APP，AES-256-GCM 凭证）
+     environment · vault                      · My Team: Specialists（独立记忆）
+     记忆=memory store；RAG=文件系统           · Workflow Map 编排可视化
+                                              · AgentCore Memory（Semantic/UserPreference/Summary）
+                                              · Bedrock Knowledge Base + Neptune GraphRAG（真·向量RAG）
+                                              · /agents 市场 + Scheduled 定时任务
+```
+
+- **CMA 目标**：零依赖、可独立跑（`deploy.py`，默认干跑）。记忆=memory store，RAG=文件系统检索。
+- **AgentX 目标**：复用平台**既有的**文档/知识库/Skills/连接器/角色/记忆管理面板（§2.5）；记忆=
+  AgentCore Memory，RAG=Bedrock Knowledge Base+GraphRAG。git-sync 把本仓库同步进 `/agents` 市场。
+- **一份源码**：`skills/`/`agents/`/`commands/` 两个目标都吃；用户改 `cma.yaml`/md 一处生效两处。
+
 ### 9.2 组件清单
 
 | 组件 | 文件 | 触网 | 职责 |
@@ -266,7 +378,7 @@ python3 scripts/cma/deploy.py session acme deliver-feature "..." --apply
 | 状态表 | `scripts/cma/.deploy-state.json` | 否 | `(scope,key,project,session)→真实 id`（gitignore） |
 | PATH 封装 | `bin/cma-check` · `bin/cma-deploy` | — | 让 agent 在 Bash 里直接调校验/部署 |
 
-### 9.3 API 依赖一览
+### 9.3 API 依赖一览（③a CMA 目标）
 
 | 平台动作 | HTTP 端点 | 何时调用 | 必要 beta 头 |
 |---|---|---|---|
@@ -280,9 +392,29 @@ python3 scripts/cma/deploy.py session acme deliver-feature "..." --apply
 | 记忆自整理 | `POST /v1/dreams`（+ 轮询/取消/归档） | 协调员发起 dream | `managed-agents-2026-04-01` + `dreaming-2026-04-21`（研究预览） |
 | MCP 凭证 | `vault_ids`（会话创建参数）+ vault API | agent 用需鉴权的 MCP server 时 | `managed-agents-2026-04-01` |
 
-外部依赖：①一个 **environment id**（云沙箱或自托管沙箱，由你预先创建）；②`ANTHROPIC_API_KEY`；
-③可选 **vault**（给 MCP server 的 OAuth 凭证，Anthropic 代管刷新）。运行时本身只依赖 Python 3
-标准库，不引入 anthropic SDK——便于嵌入任何平台后端。
+CMA 外部依赖：①一个 **environment id**（云/自托管沙箱，预先创建）；②`ANTHROPIC_API_KEY`；③可选
+**vault**（MCP OAuth 凭证）。`deploy.py` 只依赖 Python 3 标准库，不引入 anthropic SDK——便于嵌入任何后端。
+
+### 9.3b 服务依赖一览（③b AgentX 目标）
+
+部署到 AgentX 时，本仓库**消费平台既有的 ConnectRPC 服务**（不新增子系统）。相关服务（proto 包）：
+
+| 平台能力 | AgentX 服务（proto 包） | 对应脚手架声明 |
+|---|---|---|
+| Skills 管理 + git 导入 | **SkillService**（`skill/v1`）、`skill_import_service.go`（git/sparse-checkout） | `skills/**/SKILL.md` |
+| 知识库（向量/图 RAG） | **KnowledgeService**（`knowledge/v1beta`）→ Bedrock Knowledge Base + Neptune | `knowledge:`（语料型） |
+| 文档 / 库统一管理 | **LibraryService**（`agentx/v1/library`） | `knowledge:`（`type: file`） |
+| 连接器（MCP/APP）+ 凭证 | **ConnectorService**（`connector/v1`，AES-256-GCM） | `.mcp.json` / MCP server |
+| 角色（人格层） | **SpecialistService**（`specialist/v1`） | `agents/specialists/**` |
+| 编排 | **WorkflowService**（`workflow/v1`） | `agents/workflows/**` |
+| 仓库同步 / 写回 | **GitSyncService**（`gitsync/v1`）：`ListOrgs/AddOrg/TriggerSync/PublishItem/AddRepository…` | 整个仓库 |
+| 第三方 token 中枢 | **McpTokenService**（`mcptoken/v1`，`/mcp/token`） | 连接器凭证 |
+| 长期记忆 | **AgentCore Memory**（Semantic/UserPreference/Summary） | `memory_stores:`（各 scope） |
+| 定时执行 | **ScheduleService**（`schedule/v1`） | （会话级，平台特性） |
+
+AgentX 外部依赖：AWS EKS + Bedrock AgentCore（Harness/Memory/Gateway）、Bedrock Knowledge Base、
+Neptune、S3、DynamoDB、MongoDB、IRSA、OIDC（`account.nx.run`）。这些由平台提供，本仓库只需符合
+git-sync 的约定（§2.5）即可被同步、展示、运行。
 
 ### 9.4 幂等与多租户
 
@@ -311,3 +443,6 @@ python3 scripts/cma/deploy.py session acme deliver-feature "..." --apply
 - [`platform-guide.zh.md`](platform-guide.zh.md) —— 面向使用者：如何 fork、配项目、配记忆/知识、开会话。
 - [`memory-and-dreams.md`](memory-and-dreams.md) —— 官方原语逐字引用、JSON 形状、dreams/多智能体细节。
 - [`agent-roster.md`](agent-roster.md) · [`coordination-rules.md`](coordination-rules.md) —— 角色与协作不变量。
+- **AgentX 平台侧**（在 AgentX 仓库内）：`docs/AgentX-Platform-Overview.md`（平台总览、Specialists×
+  Capabilities 两层模型、AgentCore Memory）、`docs/agent-teams-design.md`（一仓库=一 Plugin=一 Team、
+  git-sync 约定、Library/Connectors/Specialists 服务）。本脚手架即该设计中的「Agent Team 仓库」。

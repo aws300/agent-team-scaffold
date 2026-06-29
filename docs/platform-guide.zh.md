@@ -14,6 +14,19 @@
 
 四层关系：**Agent（你 fork 的） → 多个 Project → 每个 Project 多个 Session → 每个 Session 一份临时 Context。**
 
+### 这个仓库可以部署到两个地方
+
+**一个仓库 = 一个 Claude Plugin = 一个 Agent Team**，两个部署目标，改一处 `cma.yaml`/md 两处生效：
+
+| 目标 | 怎么上线 | 记忆 | 知识/RAG |
+|---|---|---|---|
+| **CMA**（Anthropic 托管，零依赖可独立跑） | `python3 scripts/cma/deploy.py …`（见 §8） | memory store | 文件系统检索（grep/read） |
+| **AgentX**（你的自托管平台 `agentx.nx.run`） | 由平台 **git-sync** 同步本仓库（你不用跑命令） | AgentCore Memory（每 Specialist 独立） | **真·向量+图 RAG**（Bedrock KB + Neptune） |
+
+> 部署到 AgentX 时，你**复用平台已有的管理面板**——文档/知识库/Skills 在 **Library**、连接器在
+> **Connectors**、角色在 **My Team**、记忆是 **AgentCore Memory**。本仓库只是它们的「输入物」。
+> 详见设计文档 §0 与 §2.5。
+
 ---
 
 ## 1. 创建你的智能体（fork 模板）
@@ -247,6 +260,22 @@ python3 scripts/cma/deploy.py session acme deliver-feature "..." --apply
 > ② 需要你预先有一个 environment id（云或自托管沙箱），运行时只消费它、不创建它。
 > 架构与完整 API 依赖见 [`platform-design.zh.md`](platform-design.zh.md) §8–§9。
 
+### 部署到 AgentX（你的自托管平台）
+
+如果上线到 AgentX，**你不用跑上面的命令**——由平台的 **git-sync** 服务同步本仓库即可：
+
+1. 在 AgentX **`/settings/connectors`** 配置 GitHub 连接器，设「默认组织（Default Organization）」
+   （如 `agentx-team`）。
+2. 把本仓库作为一个 **`agents` 类条目**纳入同步：要么作为约定仓库 `{org}/agents/<子目录>`，要么
+   作为带 **topic `agents`** 的独立仓库（如 `agentx-team/my-team`）；也可在「Repository 源」里直接
+   贴本仓库 git 地址并选 kind=agent。
+3. 同步后，本仓库出现在 **`/agents` 市场**，其 `skills/` 进 **Library → Skills**、`knowledge:` 进
+   **Library → Knowledge/Documents**、角色进 **My Team → Specialists**。
+4. 在某项目里开会话即运行——记忆走 **AgentCore Memory**，知识走 **Bedrock 向量/图 RAG**。
+
+> 你在 AgentX UI 里新建/编辑的内容会**写回** custom org 的约定仓库（git-sync 双向）。official org
+> （服务配置里的，如 `aws300`）只读。详见 AgentX `docs/agent-teams-design.md` 第 4 节。
+
 ---
 
 ## 9. 自定义角色与工作流
@@ -269,8 +298,15 @@ A：不会。`scope: project` 的库平台按项目各建一份（占位符带 `
    只有 `scope: agent` 的库才跨项目共享。
 
 **Q：我有几千份文档，想做 RAG？**
-A：少量文档直接当 `knowledge`（grep 足够）。需要语义检索就把向量库做成 MCP server 在
-   `.mcp.json` 声明，再按角色 `mcpServers` 授权。Managed Agents 本身没有向量检索。
+A：看部署目标。**部署到 AgentX**：直接用平台的 **Library → Knowledge**（KnowledgeService →
+   Bedrock Knowledge Base + Neptune GraphRAG），这是**真·向量+图检索**，几千份文档没问题，
+   `knowledge:` 里 scope=`project` 的语料会落进该项目的知识库。**部署到 CMA**：少量文档直接当
+   `knowledge`（grep 足够）；要语义检索就把向量库做成 MCP server。详见设计文档 §4 的对比表。
+
+**Q：文档/知识库/Skills/连接器在哪管理？**
+A：部署到 AgentX 时**复用平台既有面板**——文档/知识库/Skills 在 **Library**、MCP/APP 连接器在
+   **`/settings/connectors`**、角色在 **My Team**。本仓库里的 `skills/` / `knowledge:` /
+   `agents/specialists/` 经 git-sync 自动出现在这些面板里（映射见设计文档 §2.5）。
 
 **Q：我能给某个子 agent 完全独立的上下文和私有记忆吗？**
 A：能。给它独立的 agent 定义（独立 model/tools/MCP）→ 独立上下文；再用 `scope: agent` 的

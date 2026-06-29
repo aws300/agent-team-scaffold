@@ -63,10 +63,11 @@ agent-team-scaffold/
 │   ├── start.md                  │    requirements intake → routes into the loop
 │   ├── status.md                 │    read-only loop status
 │   └── workflows/deliver-feature.md   local surface of the reference workflow
-├── scripts/cma/                  the CMA deploy layer — ONE python + ONE manifest (no per-agent yaml)
-│   ├── build.py                  │    reads the md assets → derives the CMA JSON → dry-run / POST
-│   ├── check.py                  │    validates the manifest + skill refs + no-nesting (run in CI)
-│   ├── cma.yaml                  │    the orchestration topology + which leaf needs a schema
+├── scripts/cma/                  the CMA layer — declare (yaml/md) → compile (build/check) → fulfil (deploy)
+│   ├── cma.yaml                  │    the ONLY config: agent · memory_stores · knowledge · projects · workflows
+│   ├── build.py                  │    DERIVE: projects × workflows → agent + session payloads (no API)
+│   ├── check.py                  │    VALIDATE: refs / scopes / workflows (no API; run in CI)
+│   ├── deploy.py                 │    FULFIL: POST /v1/agents · memory_stores · files · sessions (stdlib; dry-run by default)
 │   └── schemas/sprint-contract.json   output_schema for the planner (reader) leaf
 ├── partner-built/                extension point for third-party sub-plugins (empty placeholder)
 │
@@ -80,7 +81,7 @@ agent-team-scaffold/
 ├── .lsp.json                     LSP server registration (pyright example)
 ├── monitors/monitors.json        background monitor — watch-out.sh announces ./out/ sign-off packages
 ├── output-styles/loop-verdict.md verdict-first, evidence-cited communication style
-├── bin/cma-check                 executable added to PATH on enable (validates the CMA manifest)
+├── bin/cma-check · cma-deploy    executables added to PATH on enable (validate manifest · deploy to Managed Agents)
 ├── settings.json                 plugin-root settings: agent=coordinator + subagentStatusLine
 │
 │   ── local-development mirror ──

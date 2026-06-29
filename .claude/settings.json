@@ -10,6 +10,9 @@
       "Bash(ls *)",
       "Bash(python3 scripts/cma/check.py*)",
       "Bash(python3 scripts/cma/build.py*)",
+      "Bash(python3 scripts/cma/deploy.py*)",
+      "Bash(cma-check*)",
+      "Bash(cma-deploy*)",
       "Bash(python -m json.tool*)",
       "Bash(python -m pytest*)"
     ],

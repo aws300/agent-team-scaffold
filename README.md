@@ -145,9 +145,9 @@ Installed as a Claude Code plugin, the scaffold wires the full plugin feature se
 
 ---
 
-## Memory, isolated context & dreams (Managed Agents)
+## Memory, knowledge, isolated context & dreams (Managed Agents)
 
-The headless surface adds three Managed-Agents capabilities — see
+The headless surface adds four Managed-Agents capabilities — see
 [`docs/memory-and-dreams.md`](docs/memory-and-dreams.md) for the full, citation-backed guide.
 
 - **Memory stores** are markdown collections attached **at session creation**
@@ -159,6 +159,10 @@ The headless surface adds three Managed-Agents capabilities — see
   `cma.yaml` declares a `memory_stores:` catalog; workflows set `session_memory:` (global+project)
   and leaves set `memory:` (per-agent). `build.py` emits the session `resources[]` stanza —
   run `python3 scripts/cma/build.py deliver-feature` to see all three resolve.
+- **Knowledge / RAG** — there is **no native vector index**. Knowledge = documents mounted in
+  the sandbox (uploaded `file` resources or a `github_repository`), and "retrieval" = the agent's
+  `grep`/`glob`/`read` over them (plus `web_search`/`web_fetch`). For semantic search, expose a
+  vector DB as an **MCP server**. Mount the corpus `read_only`; let memory hold what the agent concludes.
 - **Isolated context** — a `multiagent` coordinator runs each sub-agent in its **own
   context-isolated thread** with its own model/tools/MCP. For a truly private-memory agent,
   give it its own agent definition *and* its own session with only its store attached.

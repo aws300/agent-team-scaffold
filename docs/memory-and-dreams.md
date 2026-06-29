@@ -1,10 +1,13 @@
-# Memory, Dreams & Per-Agent Context
+# Memory, Knowledge, Dreams & Per-Agent Context
 
-How the agent-team-scaffold gives its roles **persistent memory**, **isolated
-context**, and **self-curating memory via dreams** — using Claude Managed Agents.
+How the agent-team-scaffold gives its roles **persistent memory**, **knowledge /
+RAG documents**, **isolated context**, and **self-curating memory via dreams** —
+using Claude Managed Agents.
 
 > Source: [Managed Agents — overview](https://platform.claude.com/docs/en/managed-agents/overview),
 > [memory](https://platform.claude.com/docs/en/managed-agents/memory),
+> [files](https://platform.claude.com/docs/en/managed-agents/files),
+> [tools](https://platform.claude.com/docs/en/managed-agents/tools),
 > [dreams](https://platform.claude.com/docs/en/managed-agents/dreams),
 > [multiagent](https://platform.claude.com/docs/en/managed-agents/multi-agent).
 > All requests need the `managed-agents-2026-04-01` beta header; dreams also need
@@ -255,6 +258,117 @@ schedule (e.g. end of sprint), with a human reviewing the output before adoption
 
 ---
 
+## Knowledge & RAG: it's the filesystem, not a vector index
+
+The single most important thing to understand: **Managed Agents has no built-in
+vector store, embedding index, or `rag_search`/`file_search` retrieval tool.**
+Knowledge is **documents mounted into the sandbox**, and "retrieval" is the agent
+using its ordinary file tools — **`grep`, `glob`, `read`** — over those documents
+(plus `web_search` / `web_fetch` for the live web). The full built-in toolset is:
+
+| Tool | Name | Use for knowledge |
+|---|---|---|
+| Read | `read` | open a mounted document |
+| Glob | `glob` | find documents by path/pattern |
+| Grep | `grep` | regex search *across* mounted documents (this is your "retrieval") |
+| Web search | `web_search` | search the live web |
+| Web fetch | `web_fetch` | pull a URL's content |
+| Bash | `bash` | unzip archives, run a local index/`ripgrep`, parse CSV/JSON, etc. |
+
+So a "RAG corpus" in Managed Agents is **a directory of files (and/or a repo) the
+agent searches with grep/glob**. If you need true semantic/vector retrieval, you
+expose it as an **MCP server** (your own vector DB behind the [MCP
+connector](https://platform.claude.com/docs/en/managed-agents/mcp-connector)) or a
+**custom tool** — it is not a native primitive.
+
+### Three ways knowledge reaches the agent
+
+| Source | `resources[]` type | Mount | Mutable on a running session? | Best for |
+|---|---|---|---|---|
+| **Uploaded files** (Files API) | `file` | `mount_path` you choose (read-only copy) | **Yes** — `resources.add` / `resources.delete` | docs, datasets, PDFs/CSVs, a knowledge pack |
+| **GitHub repository** | `github_repository` † | repo working tree in the sandbox | Yes | a codebase / docs repo as knowledge |
+| **Memory store** | `memory_store` | `/mnt/memory/` | **No** — attach at creation only | durable, agent-*writable* knowledge that persists across sessions |
+
+† The repository resource type is confirmed in the SDK resource union
+(`resources.list` returns file / github\_repository / memory\_store entries), but
+its exact field schema is not on a fetchable public docs page as of this writing —
+treat the repo example below as illustrative and verify field names against the
+current SDK before deploying.
+
+### Attach documents as knowledge (files)
+
+Upload through the Files API, then mount in `resources[]`. Mounted files are
+**read-only copies**, up to **100 files per session**, and the copies don't count
+against storage limits.
+
+```bash
+# 1) upload
+file_id=$(curl -sS https://api.anthropic.com/v1/files \
+  -H "x-api-key: $ANTHROPIC_API_KEY" -H "anthropic-version: 2023-06-01" \
+  -H "anthropic-beta: managed-agents-2026-04-01" \
+  -F file=@handbook.md | jq -r '.id')
+
+# 2) mount as knowledge when creating the session
+curl -s https://api.anthropic.com/v1/sessions \
+  -H "x-api-key: $ANTHROPIC_API_KEY" -H "anthropic-version: 2023-06-01" \
+  -H "anthropic-beta: managed-agents-2026-04-01" -H "content-type: application/json" \
+  --data @- <<EOF
+{
+  "agent": "$AGENT_ID",
+  "environment_id": "$ENVIRONMENT_ID",
+  "resources": [
+    { "type": "file", "file_id": "$file_id", "mount_path": "/workspace/knowledge/handbook.md" }
+  ]
+}
+EOF
+```
+
+The agent then "retrieves" by searching the mount, e.g.
+`grep -ri "refund policy" /workspace/knowledge/` then `read` the hit. Add or remove
+knowledge on a **running** session:
+
+```bash
+# add a doc mid-session
+curl -s "https://api.anthropic.com/v1/sessions/$SESSION_ID/resources" \
+  -H "x-api-key: $ANTHROPIC_API_KEY" -H "anthropic-version: 2023-06-01" \
+  -H "anthropic-beta: managed-agents-2026-04-01" -H "content-type: application/json" \
+  -d "{\"type\": \"file\", \"file_id\": \"$file_id\"}"   # → returns sesrsc_... (use to delete)
+```
+
+### Knowledge vs. memory — when to use which
+
+| | **Knowledge** (files / repo) | **Memory** (memory store) |
+|---|---|---|
+| Direction | read-only reference *in* | agent *writes* what it learns |
+| Lifetime | the session (re-mount each time) | persists across sessions |
+| Search | grep/glob/read over the mount | grep/glob/read over `/mnt/memory/` |
+| Mutable mid-session | yes (files) | no (creation-only) |
+| Curated by | you upload it | the agent writes it; **dreams** clean it |
+| Use it for | the corpus to consult (handbook, codebase, datasets) | preferences, decisions, calibration the agent accrues |
+
+They compose: mount the **knowledge corpus** read-only, and give the agent a
+**memory store** to write down what it concluded from it. A **dream** later
+consolidates the memory; the knowledge corpus is just re-mounted, never dreamed.
+
+### How this scaffold uses knowledge
+
+- A **`team-standards`** global store is durable, agent-readable reference
+  (memory, `read_only`) — the always-on house rules.
+- A **knowledge corpus** (uploaded files or a docs repo) is what the **planner**
+  and **generator** consult for a specific deliverable: mount it `read_only` under
+  `/workspace/knowledge/`, and they `grep`/`read` it instead of guessing.
+- For semantic retrieval over a large corpus, wire your vector DB as an **MCP
+  server** in `.mcp.json` and authorize only the roles that need it (per-agent
+  `mcpServers`), exactly as the scaffold already does for the filesystem MCP.
+
+> The CMA layer (`scripts/cma/`) models **memory** stores declaratively today.
+> Knowledge files/repos are attached at deploy time in the session `resources[]`
+> alongside the memory entries `build.py` emits — add `file` / `github_repository`
+> entries to that same array. (A future `knowledge:` manifest key could generate
+> them; for now they are a documented deploy-time step.)
+
+---
+
 ## Mapping to the local plugin
 
 | Managed-Agents concept | Local-plugin analogue in this repo |
@@ -263,6 +377,8 @@ schedule (e.g. end of sprint), with a human reviewing the output before adoption
 | Global scope | `team-standards` → e.g. `docs/` house standards loaded read-only |
 | Project scope | `project-context` → the repo's own running notes (`./out/`, decisions) |
 | Per-agent scope | `evaluator-calibration` → a store only the evaluator's session attaches |
+| Knowledge / RAG (files + repo, grep/read) | read-only docs the planner/generator consult; a docs dir or the repo itself |
+| Vector / semantic retrieval | an MCP server in `.mcp.json` (no native primitive) |
 | Multiagent threads | the one-level `Task` delegation (`coordinator → … → packager`) |
 | Dream | a scheduled consolidation pass over calibration/project memory, human-reviewed |
 

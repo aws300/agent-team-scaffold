@@ -19,7 +19,7 @@ deploy payload:
                      `memory:` → the memory stores + knowledge docs to attach when
                      the session is created, aggregated across scopes.
 
-Four-layer model (see docs/平台设计文档.md): Agent → Project → Session → Context.
+Four-layer model (see docs/platform-design.zh.md): Agent -> Project -> Session -> Context.
 Memory/knowledge attach at SESSION creation in `resources[]` (mounted /mnt/memory/
 and /workspace), NOT on the agent. `scope` (agent|project|session) decides which
 sessions share a store. build.py iterates PROJECTS × their workflows and emits, per
@@ -51,7 +51,7 @@ REPO = Path(__file__).resolve().parents[2]          # repo root
 CMA_DIR = Path(__file__).resolve().parent
 MANIFEST = CMA_DIR / "cma.yaml"
 
-# role → which file tools the leaf gets. The whole point of "防任务重叠":
+# role → which file tools the leaf gets. The whole point of preventing task overlap:
 # tools are the task boundary. Only `resolver`/`builder` ever get write.
 ROLE_TOOLS = {
     "reader":   ["read", "grep"],                  # untrusted input; NO write, NO mcp

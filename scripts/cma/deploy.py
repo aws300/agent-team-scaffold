@@ -160,7 +160,7 @@ def ensure_agent(m: dict, tx: Transport, state: dict) -> str:
         payload["display_name"] = acfg["display_name"]
     print(f"agent: create '{payload['name']}' (model={model}, leaves={len(payload['callable_agents'])})")
     print("  note: skills are referenced by skill_ref; upload them to your workspace before --apply "
-          "(see docs/平台设计文档.md §8).")
+          "(see docs/platform-design.zh.md section 8).")
     res = tx.post("/v1/agents", payload, "agnt")
     state["agent_id"] = res["id"]
     state["agent_version"] = res.get("version", 1)

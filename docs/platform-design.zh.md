@@ -4,7 +4,7 @@
 > 只改 markdown / json / yaml** 就能自定义 **Memory、Dreams、Per-Agent Context、Knowledge**，
 > 完全不接触任何底层 API。
 
-本文是平台的**架构与概念设计**；面向使用者的操作步骤见 [`平台使用文档.md`](平台使用文档.md)。
+本文是平台的**架构与概念设计**；面向使用者的操作步骤见 [`platform-guide.zh.md`](platform-guide.zh.md)。
 
 ---
 
@@ -308,6 +308,6 @@ python3 scripts/cma/deploy.py session acme deliver-feature "..." --apply
 
 ## 11. 相关文档
 
-- [`平台使用文档.md`](平台使用文档.md) —— 面向使用者：如何 fork、配项目、配记忆/知识、开会话。
+- [`platform-guide.zh.md`](platform-guide.zh.md) —— 面向使用者：如何 fork、配项目、配记忆/知识、开会话。
 - [`memory-and-dreams.md`](memory-and-dreams.md) —— 官方原语逐字引用、JSON 形状、dreams/多智能体细节。
 - [`agent-roster.md`](agent-roster.md) · [`coordination-rules.md`](coordination-rules.md) —— 角色与协作不变量。

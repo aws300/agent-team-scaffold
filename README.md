@@ -89,7 +89,7 @@ agent-team-scaffold/
 │   ├── settings.json             │    permissions allow/deny + hook registration
 │   ├── hooks/                    │    same scripts as hooks/ above (kept in sync)
 │   └── rules/                    │    working-surface (src/) · deliverable-package (out/)
-└── docs/                         平台设计文档 · 平台使用文档 · memory-and-dreams · coordination-rules · agent-roster
+└── docs/                         platform-design.zh · platform-guide.zh · memory-and-dreams · coordination-rules · agent-roster
 ```
 
 > **Two governance layers, on purpose.** The plugin-root files (`plugin.json`,
@@ -153,7 +153,7 @@ edits only `cma.yaml` / md / json to define **Memory, Knowledge, Dreams, and per
 never touching the API. One **Agent** (this fork) runs many **Projects**; each Project runs many
 **Sessions**; **Context lives only inside one session**. Memory `scope` (`agent`/`project`/`session`)
 decides which sessions share a store. Chinese docs:
-[`docs/平台设计文档.md`](docs/平台设计文档.md) (design) · [`docs/平台使用文档.md`](docs/平台使用文档.md) (how-to).
+[`docs/platform-design.zh.md`](docs/platform-design.zh.md) (design) · [`docs/platform-guide.zh.md`](docs/platform-guide.zh.md) (how-to).
 
 ```
 Agent (this fork) ── agent-scope memory/knowledge (shared by all projects)

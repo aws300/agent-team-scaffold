@@ -6,8 +6,10 @@ Verifies, for every workflow in cma.yaml:
   - every leaf's `expert` md exists (or the leaf supplies an inline `prompt`)
   - every leaf `schema` file exists and is valid JSON
   - every skill referenced in any agent's frontmatter `skills:[]` exists under skills/
-  - every memory store referenced (workflow `session_memory:` / leaf `memory:`) is
-    declared in the `memory_stores:` catalog, with a valid `access` value
+  - every memory store referenced (agent / project / workflow / leaf) is declared in
+    the `memory_stores:` catalog, with valid `access` and `scope` values
+  - every knowledge ref (agent / project) is declared in the `knowledge:` catalog
+  - every project's `workflows:` reference an existing workflow
   - no leaf declares nested delegation (defense-in-depth; build.py forces [])
 
 Exit non-zero on any failure. Run in CI / pre-commit.
@@ -36,6 +38,7 @@ def check_skills(fm: dict, where: str):
 
 
 _VALID_ACCESS = {"read_write", "read_only"}
+_VALID_SCOPE = {"agent", "project", "session"}
 
 
 def check_memory(refs, catalog: dict, where: str):
@@ -49,15 +52,49 @@ def check_memory(refs, catalog: dict, where: str):
             err(f"{where}: memory store '{key}' has invalid access '{acc}' (use read_write|read_only)")
 
 
+def check_knowledge(refs, catalog: dict, where: str):
+    for ref in refs or []:
+        key = ref if isinstance(ref, str) else ref.get("knowledge")
+        if key not in catalog:
+            err(f"{where}: knowledge '{key}' not declared in `knowledge:` catalog")
+
+
 def main():
     m = _load_yaml(MANIFEST.read_text())
     catalog = m.get("memory_stores") or {}
-    # validate catalog defaults
+    know = m.get("knowledge") or {}
+    all_workflows = m.get("workflows") or {}
+
+    # validate memory catalog defaults (access + scope)
     for key, spec in catalog.items():
-        acc = (spec or {}).get("access")
-        if acc is not None and acc not in _VALID_ACCESS:
-            err(f"[memory_stores] '{key}' default access '{acc}' invalid (use read_write|read_only)")
-    for name, wf in (m.get("workflows") or {}).items():
+        spec = spec or {}
+        if spec.get("access") not in (None, *_VALID_ACCESS):
+            err(f"[memory_stores] '{key}' access '{spec.get('access')}' invalid (read_write|read_only)")
+        if spec.get("scope") not in (None, *_VALID_SCOPE):
+            err(f"[memory_stores] '{key}' scope '{spec.get('scope')}' invalid (agent|project|session)")
+    # validate knowledge catalog defaults (scope + type)
+    for key, spec in know.items():
+        spec = spec or {}
+        if spec.get("scope") not in (None, *_VALID_SCOPE):
+            err(f"[knowledge] '{key}' scope '{spec.get('scope')}' invalid (agent|project|session)")
+        if spec.get("type") not in (None, "file", "github_repository"):
+            err(f"[knowledge] '{key}' type '{spec.get('type')}' invalid (file|github_repository)")
+
+    # validate the agent block
+    agent_cfg = m.get("agent") or {}
+    check_memory(agent_cfg.get("memory"), catalog, "[agent] memory")
+    check_knowledge(agent_cfg.get("knowledge"), know, "[agent] knowledge")
+
+    # validate projects
+    for pkey, project in (m.get("projects") or {}).items():
+        project = project or {}
+        check_memory(project.get("memory"), catalog, f"[project {pkey}] memory")
+        check_knowledge(project.get("knowledge"), know, f"[project {pkey}] knowledge")
+        for w in project.get("workflows") or []:
+            if w not in all_workflows:
+                err(f"[project {pkey}] references unknown workflow '{w}'")
+
+    for name, wf in all_workflows.items():
         orch = REPO / wf["orchestrator"]
         if not orch.is_file():
             err(f"[{name}] orchestrator missing: {wf['orchestrator']}"); continue
